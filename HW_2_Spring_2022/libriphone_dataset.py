@@ -7,13 +7,12 @@ import random
 class PhoneDataset(Dataset):
     def __init__(self, dataset_path: str, split: str = "train",
                  seed: int = 131416, concat_n: int = 0):
-        super.__init__()
+        super(PhoneDataset, self).__init__()
         self.dataset_path = dataset_path
         self.split = split
         self.seed = seed
         self.concat_n = concat_n
-        self.X = None
-        self.y = None
+        self._load_data()
 
     def _load_data(self):
         mode = 'train' if self.split in ['train', 'valid'] else 'test'
@@ -25,7 +24,7 @@ class PhoneDataset(Dataset):
                 lines = f.readlines()
                 for line in lines:
                     label = line.strip('\n').split(' ')
-                    labels_dict[label[0]] = label[1:]
+                    labels_dict[label[0]] = [int(no) for no in label[1:]]
 
         # 2. 数据明细
         split_list = []
@@ -60,9 +59,9 @@ class PhoneDataset(Dataset):
     def _get_valid_split(self, split_list):
         train_ratio = 0.8
         if self.split == 'train':
-            return split_list[: len(split_list) * train_ratio]
+            return split_list[: int(len(split_list) * train_ratio)]
         else:
-            return split_list[len(split_list) * train_ratio:]
+            return split_list[int(len(split_list) * train_ratio):]
 
     def _process_feat(self, feat):
         dim0 = feat.shape[0]
