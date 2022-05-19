@@ -76,6 +76,7 @@ def train_loop(opt, train_set, valid_set, model, optimizer, criterion, logger):
         model.train()
         for x, y in train_pbar:
             # TODO 为什么每个batch都要执行zero_grad
+            # 因为不执行zero_grad，梯度下降是使用累计梯度
             # Set gradient to zero.
             optimizer.zero_grad()
             x, y = x.float().cuda(), y.float().cuda()
@@ -163,6 +164,8 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+torch.optim.ASGD
 
 
 
