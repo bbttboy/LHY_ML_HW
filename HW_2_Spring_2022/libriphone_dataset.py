@@ -37,9 +37,9 @@ class PhoneDataset(Dataset):
         # 3. 数据源
         data_dir = join(self.dataset_path, 'feat', mode)
         # 打乱数据
-        random.seed(self.seed)
-        random.shuffle(split_list)
         if mode == 'train':
+            random.seed(self.seed)
+            random.shuffle(split_list)
             split_list = self._get_valid_split(split_list)
         # 获取数据
         data = []
@@ -75,7 +75,13 @@ class PhoneDataset(Dataset):
         return concat_feat
 
     def __getitem__(self, index) -> T_co:
-        return self.X[index], self.y[index]
+        if self.split != 'test':
+            return self.X[index].flatten(), self.y[index]
+        else:
+            return self.X[index].flatten()
+
+    def __len__(self):
+        return len(self.X)
 
 
 def _shift_feat(feat: torch.Tensor, n):
