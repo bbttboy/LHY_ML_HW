@@ -17,7 +17,7 @@ def parse_opt():
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument('--learning_rate_decay_frequency', type=int, default=100000)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--num_epochs', type=int, default=10)
+    parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument("--early_stop", type=int, default=10)
     parser.add_argument('--log_dir', type=str, default="./log")
 
@@ -74,7 +74,7 @@ def create_logger(opt):
     from datetime import datetime
 
     now = datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
-    log_dir = join(opt.log_dir, now, "_", opt.model)
+    log_dir = join(opt.log_dir, now + "_" + opt.model)
     logger = SummaryWriter(log_dir=log_dir)
     for k, v in opt.__dict__.items():
         logger.add_text(k, str(v))
