@@ -17,7 +17,7 @@ def parse_opt():
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument('--learning_rate_decay_frequency', type=int, default=100000)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--num_epochs', type=int, default=10)
+    parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument("--early_stop", type=int, default=10)
     parser.add_argument('--log_dir', type=str, default="./log")
 
@@ -74,11 +74,23 @@ def create_logger(opt):
     from datetime import datetime
 
     now = datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
-    log_dir = join(opt.log_dir, now, "_", opt.model)
+    log_dir = join(opt.log_dir, now + "_" + opt.model)
     logger = SummaryWriter(log_dir=log_dir)
     for k, v in opt.__dict__.items():
         logger.add_text(k, str(v))
     return logger
+
+
+def get_recall(pred, y):
+    assert len(pred) == len(y)
+    tp = 0
+    fn = 0
+    for i in range(len(pred)):
+        if abs(pred[i] - y[i]) < 0.5:
+            tp += 1
+        else:
+            fn += 1
+    return tp, fn
 
 
 def train_loop(opt, train_set, valid_set, model, optimizer, criterion, logger):
@@ -119,14 +131,25 @@ def train_loop(opt, train_set, valid_set, model, optimizer, criterion, logger):
         # 验证
         valid_pbar = tqdm(valid_loader, position=0, leave=True)
         loss_record = []
+        tp = 0
+        fn = 0
         model.eval()
         for x, y in valid_pbar:
             x, y = x.cuda(), y.cuda()
             with torch.no_grad():
                 pred = model(x)
                 loss = criterion(pred, y)
+                t, f = get_recall(pred, y)
+                tp += t
+                fn += f
             loss_record.append(loss.item())
 
+        # 召回率
+        assert tp + fn == len(valid_set.X.shape[0])
+        recall = tp / (tp + fn)
+        logger.add_scalar('Recall/valid', recall, step)
+
+        # 平均loss
         mean_valid_loss = sum(loss_record) / len(loss_record)
         print(f'Epoch [{epoch + 1}/{opt.num_epochs}]: '
               f'Train loss: {mean_train_loss:.4f}, Valid loss: {mean_valid_loss:.4f}')
