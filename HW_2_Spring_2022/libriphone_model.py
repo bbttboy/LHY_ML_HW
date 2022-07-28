@@ -15,7 +15,7 @@ class BasicBlock(Module):
 
 
 class PhonemeModel(Module):
-    def __init__(self, input_dim, output_dim=43, hidden_layers=1, hidden_dim=256):
+    def __init__(self, input_dim, output_dim=41, hidden_layers=1, hidden_dim=256):
         super(PhonemeModel, self).__init__()
         self.fc = nn.Sequential(
             BasicBlock(input_dim, hidden_dim),

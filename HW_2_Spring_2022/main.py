@@ -67,6 +67,16 @@ def get_data_loader(dataset, split, opt):
         shuffle=True if split == 'train' else False,
     )
 
+# def get_data_loader(dataset,  opt):
+#     from torch.utils.data.dataloader import DataLoader
+#     # 数据集中已经以数据划分为组进行了shuffle
+#     # 这里不能shuffle，会完全打乱数据顺序，每组数据内部的顺序应该遵守，只能Shuffle组之间的顺序
+#     return DataLoader(
+#         dataset,
+#         batch_size=opt.batch_size,
+#         shuffle=False,
+#     )
+
 
 def create_logger(opt):
     from torch.utils.tensorboard import SummaryWriter
@@ -81,23 +91,12 @@ def create_logger(opt):
     return logger
 
 
-def get_recall(pred, y):
-    assert len(pred) == len(y)
-    tp = 0
-    fn = 0
-    for i in range(len(pred)):
-        if abs(pred[i] - y[i]) < 0.5:
-            tp += 1
-        else:
-            fn += 1
-    return tp, fn
-
-
 def train_loop(opt, train_set, valid_set, model, optimizer, criterion, logger):
     import math
     import os
     import torch
     from tqdm import tqdm
+    import torch.nn.functional as F
 
     logger.add_text("train_set_x_shape", str(train_set.X.shape))
     logger.add_text("valid_set_x_shape", str(valid_set.X.shape))
@@ -105,65 +104,75 @@ def train_loop(opt, train_set, valid_set, model, optimizer, criterion, logger):
     train_loader = get_data_loader(train_set, "train", opt)
     valid_loader = get_data_loader(valid_set, "valid", opt)
 
-    best_loss, step, early_stop_count = math.inf, 0, 0
+    best_acc, step, early_stop_count = math.inf, 0, 0
 
     for epoch in range(opt.num_epochs):
         # 训练
         train_pbar = tqdm(train_loader, position=0, leave=True)
         loss_record = []
+        train_acc = 0
+        valid_acc = 0
         model.train()
         for x, y in train_pbar:
             x, y = x.cuda(), y.cuda()
             optimizer.zero_grad()
             pred = model(x)
-            loss = criterion(pred, y)
+            # CrossEntropyLoss 相当于以下操作的组合
+            pred_softmax = F.softmax(pred, dim=1)
+            pred_log_soft = torch.log(pred_softmax)
+            loss = F.nll_loss(pred_log_soft, y)
+
             loss.backward()
             optimizer.step()
             step += 1
-            loss_record.append(loss.detach().item())
+            loss_record.append(loss.item())
+
+            # 预测出的分类
+            _, pred_class = torch.max(pred_softmax.detach(), dim=1)
+            train_acc += (pred_class.detach() == y.detach()).sum().item()
 
             train_pbar.set_description(f'Epoch [{epoch + 1}/{opt.num_epochs}]')
-            train_pbar.set_postfix({'loss': loss.detach().item()})
+            train_pbar.set_postfix({'loss': loss.item()})
 
         mean_train_loss = sum(loss_record) / len(loss_record)
         logger.add_scalar('Loss/train', mean_train_loss, step)
+        logger.add_scalar('ACC/train', train_acc/len(train_set), step)
 
         # 验证
         valid_pbar = tqdm(valid_loader, position=0, leave=True)
         loss_record = []
-        tp = 0
-        fn = 0
         model.eval()
         for x, y in valid_pbar:
             x, y = x.cuda(), y.cuda()
             with torch.no_grad():
                 pred = model(x)
                 loss = criterion(pred, y)
-                t, f = get_recall(pred, y)
-                tp += t
-                fn += f
             loss_record.append(loss.item())
 
-        # 召回率
-        assert tp + fn == len(valid_set.X.shape[0])
-        recall = tp / (tp + fn)
-        logger.add_scalar('Recall/valid', recall, step)
+            _, valid_class = torch.max(pred.detach(), dim=1)
+            valid_acc += (valid_class.detach() == y.detach()).sum().item()
+
+            valid_pbar.set_description('Valid')
+
+        logger.add_scalar('ACC/valid', valid_acc/len(valid_set), step)
 
         # 平均loss
         mean_valid_loss = sum(loss_record) / len(loss_record)
-        print(f'Epoch [{epoch + 1}/{opt.num_epochs}]: '
-              f'Train loss: {mean_train_loss:.4f}, Valid loss: {mean_valid_loss:.4f}')
         logger.add_scalar('Loss/valid', mean_valid_loss, step)
+        # 打印报告
+        print(f'Epoch [{epoch + 1}/{opt.num_epochs}]: '
+              f'Train loss: {mean_train_loss:.4f}, Valid loss: {mean_valid_loss:.4f}',
+              f'Train acc: {train_acc/len(train_set):.4f}, Valid acc: {valid_acc/len(valid_set):.4f}')
 
-        if mean_valid_loss < best_loss:
-            best_loss = mean_valid_loss
+        if valid_acc < best_acc:
+            best_acc = valid_acc
             torch.save(
                 {"epoch": epoch,
                  "step": step,
                  "model_state_dict": model.state_dict()},
-                os.path.join(logger.file_writer.get_logdir(), 'best_loss_checkpoint.ckpt')
+                os.path.join(logger.file_writer.get_logdir(), 'best_valid_acc_checkpoint.ckpt')
             )
-            print('Saving model with loss {:.3f}...'.format(best_loss))
+            print('Saving model with valid accuracy {:.3f}...'.format(valid_acc/len(valid_set)))
             early_stop_count = 0
         else:
             early_stop_count += 1
